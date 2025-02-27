@@ -142,7 +142,7 @@ if __name__ == "__main__":
         if not os.path.exists(_newpath):
             os.makedirs(_newpath)
         for _file in Path(_path).rglob("*.txt"):
-            with open(_file, 'r') as _f:
+            with open(_file, 'r', encoding="utf-8") as _f:
                 lines = _f.readlines()
                 outpath = str(os.path.relpath(_file, _path))
                 outpath = os.path.join(_newpath, outpath)
@@ -156,16 +156,16 @@ if __name__ == "__main__":
                     lines = translate(lines, path=str(_file), nbpath=str(_path))
                 else:
                     print(f"WARN: no conversion of {_file} but copy to {outpath}")
-                with open(outpath, 'w') as _o:
+                with open(outpath, 'w', encoding="utf-8") as _o:
                     _o.writelines(lines)
         for _file in Path(_path).rglob("*.md"):
-            with open(_file, 'r') as _f:
+            with open(_file, 'r', encoding="utf-8") as _f:
                 outpath = str(os.path.relpath(_file, _path))
                 outpath = os.path.join(_newpath, outpath)
                 try:
                     os.makedirs(os.path.dirname(outpath))
                 except FileExistsError:
                     pass
-                with open(outpath, 'w') as _o:
+                with open(outpath, 'w', encoding="utf-8") as _o:
                     print(f"Copy {_file} to {outpath}")
                     _o.writelines(_f.readlines())
