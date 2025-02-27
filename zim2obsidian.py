@@ -84,7 +84,7 @@ def translate(text: List[str], path:str="", nbpath:str="") -> List[str]:
                 target = tokens[0]
 
             # TODO '~' -> '/home/user'
-            target = sub(r"^~", "file://"+str(Path.home()), target)
+            target = sub(r"^~", Path.home().as_uri(), target)
 
             if not target.startswith("http://") \
                     and not target.startswith("https://") \
