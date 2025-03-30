@@ -4,8 +4,10 @@
 Converts [Zim Desktop Wiki](https://zim-wiki.org) to Markdown
 
 Usage:
-    python zim2md.py <input.file >output.file
+    python zim2md.py <input.file> <output.file>
 """
+
+USE_FOLDER_NOTES = True
 
 import os
 from re import sub, fullmatch, findall
@@ -224,12 +226,24 @@ if __name__ == "__main__":
                 old_fp = os.path.join(olddir, file)
 
                 if os.path.splitext(file)[1].lower() == ".txt":
-                    new_fp = os.path.join(
+                    new_folder = os.path.join(
                         _newpath,
                         relpath.replace("_", " "),
-                        file.replace("_", " "),
                     )
-                    new_fp = os.path.splitext(new_fp)[0] + ".md"
+                    new_fileid = os.path.splitext(file.replace("_", " "))[0]
+                    new_filename = new_fileid + ".md"
+                    if USE_FOLDER_NOTES and os.path.isdir(os.path.join(new_folder, new_fileid)):
+                        new_fp = os.path.join(
+                            new_folder,
+                            new_fileid,
+                            new_filename
+                        )
+                    else:
+                        new_fp = os.path.join(
+                            new_folder,
+                            new_filename
+                        )
+
                     print(f"Translating {old_fp} to {new_fp}")
                     with open(old_fp, 'r', encoding="utf-8") as _f:
                         lines = _f.readlines()
