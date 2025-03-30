@@ -10,8 +10,10 @@ Usage:
 import os
 from re import sub, fullmatch, findall
 from pathlib import Path
+from shutil import copy2
 from datetime import datetime
 from typing import List
+import sys
 
 def __compatible(lines):
     """Return True iff the first two lines of a file allute to it being
@@ -36,6 +38,7 @@ def compatible(path=None, infile=None, lines=None):
         return __compatible(lines[:4])
     return True
 
+# TODO make test file that has everything
 
 def translate(text: List[str], path:str="", nbpath:str="") -> List[str]:
     """Discards the first four lines. All other lines are converted."""
@@ -43,9 +46,18 @@ def translate(text: List[str], path:str="", nbpath:str="") -> List[str]:
     text = text[4:]
     headline_nr = 0
     current_ind = 0
-    title = ""
+    title = os.path.splitext(os.path.basename(path))[0].replace("_", " ")
     relpath = "/".join(str(os.path.relpath(path, nbpath)).split(os.sep)[:-1])
-    for i, line in enumerate(text):
+
+    # ignore duplicate title text
+    topline = findall("====== (.*) ======", text[0])
+    if topline and topline[0].replace("_", " ") == title:
+        text = text[1:]
+
+    i = 0
+    while i < len(text):
+        line = text[i]
+
         # Head lines
         line = sub(r"^(=+)([^=]+)=+$", r"\g<1>\g<2>", line) # removes tailing '='
         line = sub(r"^======", "#", line)
@@ -69,7 +81,10 @@ def translate(text: List[str], path:str="", nbpath:str="") -> List[str]:
             # TODO relative to current file
             target = target.replace(":", "/")
             line = line.replace(link, f"[[{target}]]", 1)
-        for link in findall(r"\[\[[^+]+?\|?[^\]]+?\]\]", line):
+        
+        # not sure why they were excluding links starting with +
+        # for link in findall(r"\[\[[^+]+?\|?[^\]]+?\]\]", line):
+        for link in findall(r"\[\[.+?\|?[^\]]+?\]\]", line):
             label, target = None, None
             tokens = link[2:-2].split("|")
 
@@ -83,16 +98,24 @@ def translate(text: List[str], path:str="", nbpath:str="") -> List[str]:
                 label = tokens[0]
                 target = tokens[0]
 
-            # TODO '~' -> '/home/user'
             target = sub(r"^~", Path.home().as_uri(), target)
 
             if not target.startswith("http://") \
                     and not target.startswith("https://") \
                     and not target.startswith("file://"):
-                target = target.replace(" ", "%20")
+                # target = target.replace(" ", "_")
                 target = target.replace(":", "/")
+                target = target.replace("+", f"{title}/")
+
+            # Valid link formats:
+            # [[0Plots/Rich people|Rich people]]      [[target|label]]
+            # [Rich people](0Plots/Rich%20people)     [label](target.replace(" ", "%20"))
+            # [Rich people](<0Plots/Rich people>)     [label](<target>)
             if not target == label:
-                line = line.replace(link, f"[{label}]({target})", 1)
+                if " " in target:
+                    line = line.replace(link, f"[{label}](<{target}>)", 1)
+                else:
+                    line = line.replace(link, f"[{label}]({target})", 1)
             else:
                 line = line.replace(link, f"[[{target}]]", 1)
         line = sub(r"(file://\S+)", r"[\g<1>](\g<1>)", line)
@@ -109,26 +132,62 @@ def translate(text: List[str], path:str="", nbpath:str="") -> List[str]:
         line = sub(r"\s+@(\S+)", r"#\g<1>", line)
         line = sub(r"\[\[\+(\S+?)\]\]", r"[[\g<1>]]", line)
 
-        # rich text formatting
+        # italics
+        line = sub(r"//(.+?)//", r"*\g<1>*", line)
+        
+        # rich text formatting?
+        line = sub(r"_\{(.+?)\}", r"<sub>\g<1></sub>", line)
+        line = sub(r"\^\{(.+?)\}", r"<sup>\g<1></sup>", line)
         line = sub(r"~~(.+?)~~", r"~~\g<1>~~", line)
         line = sub(r"(!?<=:)//([^:]+?)//", r"*\g<1>*", line)
         line = sub(r"\*\*(.+?)\*\*", r"**\g<1>**", line)
         line = sub(r"__(.+?)__", r"==\g<1>==", line)
 
+        # horizontal line
+        line = sub(r"--------------------", r"\n---", line)
+
         # footnotes
         line = sub(r"(?!<=\[)\[([0-9]{,4})\](?!=\])", r"[^\g<1>]", line)
 
-        # TODO Images
-        line = sub(r"{{(.+?)|(.+?)}}", r"![[\g<1>]]", line)
-        line = sub(r"{{(.+?)}}", r"![[\g<1>]]", line)
+        # Images with parameters
+        line = sub(r"{{./(.+?)(?:\?.+)}}", rf"![[{title}/\g<1>]]", line)
+        line = sub(r"{{.\\(.+?)(?:\?.+)}}", rf"![[{title}/\g<1>]]", line)
+        
+        # Images without parameters
+        line = sub(r"{{./(.+?)}}", rf"![[{title}/\g<1>]]", line)
+        line = sub(r"{{.\\(.+?)}}", rf"![[{title}/\g<1>]]", line)
+        
+        # Old image lines
+        # line = sub(r"{{(.+?)}}", r"![[\g<1>]]", line)
+        # line = sub(r"{{(.+?)|(.+?)}}", r"![[\g<1>]]", line)
+
+        # Code blocks
+        if line.startswith("{{{code:"):
+            langtag = findall('.+lang="(.+)" ', line)
+            if langtag:
+                lang = langtag[0]
+                if lang == "python3":
+                    lang = "python"
+            else:
+                lang = ""
+            text[i] = f"```{lang}\n"
+            j = 0
+            subline = text[i + j]
+            while not subline.startswith("}}}"):
+                j += 1
+                subline = text[i + j]
+            text[i + j] = "```\n"
+            i += j + 1
+            continue
 
         text[i] = line
+        i += 1
 
     # TODO more features
     return text
 
+
 if __name__ == "__main__":
-    import sys
     if len(sys.argv) <= 1:
         ls = sys.stdin.readlines()
         if compatible(lines=ls):
@@ -137,35 +196,51 @@ if __name__ == "__main__":
             sys.stderr.writelines(["FATAL: Incompatible file.\n"])
             sys.exit(1)
     else:
-        _newpath = sys.argv[2]
-        _path = sys.argv[1]
-        if not os.path.exists(_newpath):
-            os.makedirs(_newpath)
-        for _file in Path(_path).rglob("*.txt"):
-            with open(_file, 'r', encoding="utf-8") as _f:
-                lines = _f.readlines()
-                outpath = str(os.path.relpath(_file, _path))
-                outpath = os.path.join(_newpath, outpath)
-                try:
-                    os.makedirs(os.path.dirname(outpath))
-                except FileExistsError:
-                    pass
-                outpath = sub(r"\.txt$", ".md", str(outpath))
-                if compatible(lines=lines):
-                    print(f"translate {_file} to {outpath}")
-                    lines = translate(lines, path=str(_file), nbpath=str(_path))
+        _path = os.path.normpath(sys.argv[1])
+        _newpath = os.path.normpath(sys.argv[2])
+
+        os.makedirs(_newpath, exist_ok=True)
+
+        for olddir, folders, files in os.walk(_path):
+
+            if olddir != _path:
+                relpath = os.path.relpath(olddir, _path)
+            else:
+                relpath = ""
+
+            for folder in folders:
+                os.makedirs(os.path.join(
+                    _newpath,
+                    relpath.replace("_", " "),
+                    folder.replace("_", " "),
+                ), exist_ok=True)
+
+            for file in files:
+
+                # temp google drive workaround
+                if os.path.splitext(file)[1].lower() in [".gform", ".gsheet"]:
+                    continue
+
+                old_fp = os.path.join(olddir, file)
+
+                if os.path.splitext(file)[1].lower() == ".txt":
+                    new_fp = os.path.join(
+                        _newpath,
+                        relpath.replace("_", " "),
+                        file.replace("_", " "),
+                    )
+                    new_fp = os.path.splitext(new_fp)[0] + ".md"
+                    print(f"Translating {old_fp} to {new_fp}")
+                    with open(old_fp, 'r', encoding="utf-8") as _f:
+                        lines = _f.readlines()
+                    lines = translate(lines, old_fp, new_fp)
+                    with open(new_fp, 'w', encoding="utf-8") as _o:
+                        _o.writelines(lines)
                 else:
-                    print(f"WARN: no conversion of {_file} but copy to {outpath}")
-                with open(outpath, 'w', encoding="utf-8") as _o:
-                    _o.writelines(lines)
-        for _file in Path(_path).rglob("*.md"):
-            with open(_file, 'r', encoding="utf-8") as _f:
-                outpath = str(os.path.relpath(_file, _path))
-                outpath = os.path.join(_newpath, outpath)
-                try:
-                    os.makedirs(os.path.dirname(outpath))
-                except FileExistsError:
-                    pass
-                with open(outpath, 'w', encoding="utf-8") as _o:
-                    print(f"Copy {_file} to {outpath}")
-                    _o.writelines(_f.readlines())
+                    new_fp = os.path.join(
+                        _newpath,
+                        relpath.replace("_", " "),
+                        file,
+                    )
+                    print(f"Copying {old_fp} to {new_fp}")
+                    copy2(old_fp, new_fp)
